@@ -16,9 +16,9 @@ from config import BOT_TOKEN, SUPPORT_LINK, ANTHROPIC_API_KEY, CLAUDE_MODEL
 from database.db import init_db
 from database.models import get_user_tickets
 from handlers.start import start_command, help_command
-from handlers.message_router import handle_message
+from handlers.message_router import handle_message, handle_non_text
 from handlers.group_handler import handle_group_message, handle_edited_group_message
-from handlers.callback_handler import handle_user_type_callback
+from handlers.callback_handler import handle_callback
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -152,8 +152,13 @@ def main() -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("ticket", ticket_command))
 
-    # Callback query handler for inline buttons (Individual / Business)
-    app.add_handler(CallbackQueryHandler(handle_user_type_callback, pattern=r"^user_type:"))
+    # Callback query handler — handles all inline button presses
+    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Non-text messages (images, stickers, files) — private chats only
+    app.add_handler(
+        MessageHandler(~filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_non_text)
+    )
 
     # Private chat message handler
     app.add_handler(
