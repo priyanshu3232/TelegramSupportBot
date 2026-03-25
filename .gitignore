@@ -1,0 +1,8 @@
+.env
+data/*.db
+__pycache__/
+*.pyc
+*.pyo
+bot_debug.log
+venv/
+.claude/

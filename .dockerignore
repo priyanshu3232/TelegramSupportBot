@@ -1,0 +1,11 @@
+.env
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+data/*.db
+bot_debug.log
+*.md
+.claude
+telegram-bot.service

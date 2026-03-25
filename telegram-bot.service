@@ -1,0 +1,22 @@
+[Unit]
+Description=Endl Telegram Support Bot
+After=network.target
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/telegram-bot
+ExecStart=/opt/telegram-bot/venv/bin/python3 bot.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/opt/telegram-bot/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
