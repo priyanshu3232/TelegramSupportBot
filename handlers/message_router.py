@@ -27,7 +27,8 @@ from utils.keyboards import (
     KB_OTP_EXPIRED, KB_OTP_LOCKED, KB_URGENCY, kb_back, _mk,
     get_kb_by_name,
 )
-from ai.claude_client import get_freetext_response
+from ai.claude_client import get_freetext_response, get_ai_response
+from ai.system_prompt import get_group_system_prompt
 from utils.otp import generate_otp, store_otp, verify_otp, cancel_otp, send_otp_email
 from utils.rate_limiter import is_rate_limited
 
@@ -158,15 +159,15 @@ async def _route(
     state = session.get("conversation_state", "greeting")
     account_type = session.get("user_type") or "individual"
 
-    # Groups skip all onboarding / OTP flows
+    # ── GROUP CHAT — conversational mode, no buttons ────────────────
     is_group = chat_type in ("group", "supergroup")
-    if is_group and state in (
-        "greeting", "awaiting_status_choice", "status_awaiting_email",
-        "status_awaiting_otp", "awaiting_flag_query",
-    ):
-        await update_session(session_key, conversation_state="active",
-                             user_type=account_type)
-        state = "active"
+    if is_group:
+        history = await get_conversation_history(session_key, limit=6)
+        group_reply = await get_ai_response(get_group_system_prompt(), history, text)
+        await save_message(session_key, "user", text)
+        await update.message.reply_text(group_reply, **reply_kw)
+        await save_message(session_key, "assistant", group_reply)
+        return
 
     # ── GREETING / FIRST MESSAGE ────────────────────────────────────
     if state == "greeting" or (state == "active" and is_greeting(text)):
