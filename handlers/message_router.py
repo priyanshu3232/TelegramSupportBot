@@ -18,14 +18,16 @@ from telegram.ext import ContextTypes
 
 from config import SUPPORT_LINK, SMTP_USER, SMTP_PASSWORD
 from database.models import (
-    get_or_create_session, update_session,
-    save_verified_user, get_verified_email,
+    get_or_create_session, update_session, save_message,
+    save_verified_user, get_verified_email, get_conversation_history,
 )
 from handlers.greeting import is_greeting
 from utils.keyboards import (
     KB_ACCOUNT_TYPE, kb_main, KB_SUPPORT, KB_OTP_RESEND_OPTIONS,
     KB_OTP_EXPIRED, KB_OTP_LOCKED, KB_URGENCY, kb_back, _mk,
+    get_kb_by_name,
 )
+from ai.claude_client import get_freetext_response
 from utils.otp import generate_otp, store_otp, verify_otp, cancel_otp, send_otp_email
 from utils.rate_limiter import is_rate_limited
 
@@ -284,9 +286,9 @@ async def _route(
         )
         return
 
-    # ── ACTIVE STATE ─────────────────────────────────────────────────
+    # ── ACTIVE STATE — Free-text via Claude ──────────────────────────
 
-    # "Menu / back" shortcuts
+    # Fast paths that don't need an API call
     if _wants_menu(text):
         await update_session(session_key, unrecognized_count=0)
         await update.message.reply_text(
@@ -296,75 +298,93 @@ async def _route(
         )
         return
 
-    # Frustration detection (Step 12)
-    if _is_frustrated(text):
+    # Call Claude for intent detection + natural reply
+    history = await get_conversation_history(session_key, limit=6)
+    result = await get_freetext_response(text, account_type, history)
+
+    intent            = result.get("intent", "unknown")
+    reply             = result.get("reply", "")
+    buttons_name      = result.get("buttons", "main_menu")
+    acct_hint         = result.get("account_type_hint")
+
+    # Apply account type hint if we don't have one yet
+    if acct_hint and acct_hint in ("individual", "business") and not session.get("user_type"):
+        account_type = acct_hint
+        await update_session(session_key, user_type=acct_hint)
+
+    # Track frustration
+    if intent == "frustration":
         frustration_count = (session.get("frustration_count") or 0) + 1
         await update_session(session_key, frustration_count=frustration_count)
+        if frustration_count >= 2 and buttons_name != "urgency":
+            buttons_name = "urgency"
+
+    # Greeting — show welcome, don't show a reply
+    if intent == "greeting":
         await update.message.reply_text(
-            "I completely understand, and I sincerely apologise for the inconvenience. "
-            "Your time is important to us and I want to make sure this gets resolved as "
-            "quickly as possible.",
-            reply_markup=KB_URGENCY,
+            "\U0001f44b Welcome to <b>Endl Support</b>!\n"
+            "I'm here to help with your account, onboarding status, payments, and more.\n\n"
+            "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
+            reply_markup=KB_ACCOUNT_TYPE,
+            parse_mode="HTML",
             **reply_kw,
         )
         return
 
-    # Status check soft trigger
-    if _wants_status(text):
-        if not _smtp_ok():
-            await update.message.reply_text(
-                "I'm unable to check your status right now due to a configuration issue. "
-                f"Please contact our support team: {SUPPORT_LINK}",
-                reply_markup=kb_main(account_type),
-                **reply_kw,
-            )
-            return
-        verified_email = await get_verified_email(user_id)
-        if verified_email:
-            await update_session(session_key, email=verified_email,
-                                 conversation_state="active")
-            await update.message.reply_text(
-                f"Just to make sure I help you correctly — are you looking to check your "
-                f"KYC/KYB verification status?",
-                reply_markup=_mk(
-                    [("Yes, check my status", "status:use_verified"),
-                     ("No, something else", "nav:back")],
-                ),
-                **reply_kw,
-            )
-        else:
-            await update_session(session_key, conversation_state="status_awaiting_email")
-            await update.message.reply_text(
-                "Just to make sure I help you correctly — are you looking to check your "
-                "KYC/KYB verification status?\n\n"
-                "If yes, please share the email you used when signing up with Endl.",
-                **reply_kw,
-            )
-        return
-
-    # Unrecognised input — track count (Step 14)
-    unrecognized_count = (session.get("unrecognized_count") or 0) + 1
-    await update_session(session_key, unrecognized_count=unrecognized_count)
-
-    if unrecognized_count >= 2:
+    # Menu / back — already handled above but catch it from Claude too
+    if intent == "menu":
         await update_session(session_key, unrecognized_count=0)
         await update.message.reply_text(
-            "I didn't quite catch that — let me take you back to the main menu so you can "
-            "choose what you need.",
+            _main_label(account_type),
             reply_markup=kb_main(account_type),
             **reply_kw,
         )
+        return
+
+    # Resolve keyboard
+    kb = get_kb_by_name(buttons_name, account_type)
+
+    # For status_flow intent, if user already has verified email skip OTP confirmation
+    if intent in ("check_status", "frustration") and buttons_name == "status_flow":
+        if not _smtp_ok():
+            reply = (
+                "I'm unable to check your status right now due to a configuration issue. "
+                f"Please contact our support team: {SUPPORT_LINK}"
+            )
+            kb = kb_main(account_type)
+        else:
+            verified_email = await get_verified_email(user_id)
+            if verified_email:
+                await update_session(session_key, email=verified_email)
+                kb = _mk(
+                    [("Yes, check my status", "status:use_verified"),
+                     ("No, something else", "nav:back")],
+                )
+
+    # Send the reply + buttons
+    if reply:
+        await save_message(session_key, "user", text)
+        await update.message.reply_text(reply, reply_markup=kb, **reply_kw)
+        await save_message(session_key, "assistant", reply)
     else:
-        # Step 13 — out of scope
+        # No reply (shouldn't happen but fallback gracefully)
         await update.message.reply_text(
-            "I want to make sure I give you accurate information — let me connect you with "
-            "our support team who are best placed to answer that.",
-            reply_markup=_mk(
-                [("🎧 Connect to support", "nav:support"),
-                 ("← Back to menu", "nav:back")],
-            ),
-            **reply_kw,
+            _main_label(account_type), reply_markup=kb_main(account_type), **reply_kw
         )
+
+    # Reset unrecognized counter on successful match
+    if intent != "unknown":
+        await update_session(session_key, unrecognized_count=0)
+    else:
+        unrecognized_count = (session.get("unrecognized_count") or 0) + 1
+        await update_session(session_key, unrecognized_count=unrecognized_count)
+        if unrecognized_count >= 2:
+            await update_session(session_key, unrecognized_count=0)
+            await update.message.reply_text(
+                "I didn't quite catch that — let me take you back to the main menu.",
+                reply_markup=kb_main(account_type),
+                **reply_kw,
+            )
 
 
 # ── OTP helpers ───────────────────────────────────────────────────────

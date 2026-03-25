@@ -180,8 +180,37 @@ def kb_support_back() -> InlineKeyboardMarkup:
     )
 
 
+# ── Status check confirmation (soft trigger) ─────────────────────────
+KB_STATUS_CONFIRM = _mk(
+    [("Yes, check my status", "status:check"), ("No, something else", "nav:back")],
+)
+
+
 def kb_status_support_back() -> InlineKeyboardMarkup:
     return _mk(
         [("🔍 Check my KYB status", "status:check"), ("🎧 Talk to support", "nav:support")],
         [("← Back to menu", "nav:back")],
     )
+
+
+# ── Name → keyboard resolver (used by free-text handler) ─────────────
+
+def get_kb_by_name(name: str, account_type: str = "individual") -> InlineKeyboardMarkup:
+    """
+    Resolve a button-set name (as returned by Claude's freetext response)
+    to the appropriate InlineKeyboardMarkup.
+    """
+    mapping = {
+        "status_flow":    KB_STATUS_CONFIRM,
+        "about":          KB_ABOUT,
+        "currencies":     KB_CURRENCIES,
+        "payments_ind":   KB_PAY_IND,
+        "payments_biz":   KB_PAY_BIZ,
+        "onboarding":     KB_ONBOARDING,
+        "card":           KB_CARD,
+        "security":       KB_SECURITY_BIZ if account_type == "business" else KB_SECURITY_IND,
+        "support":        KB_SUPPORT,
+        "urgency":        KB_URGENCY,
+        "main_menu":      kb_main(account_type),
+    }
+    return mapping.get(name, kb_main(account_type))
