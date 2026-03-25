@@ -26,6 +26,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from handlers.message_router import handle_message
+from handlers.greeting import is_greeting
+from utils.keyboards import KB_GROUP_MAIN
 
 logger = logging.getLogger(__name__)
 
@@ -232,10 +234,11 @@ async def handle_group_message(
         user.id, chat.id, cleaned[:80] if cleaned else "(empty)",
     )
 
-    if not cleaned:
+    # --- Empty tag or greeting only → Group Quick Menu ---
+    if not cleaned or is_greeting(cleaned) or cleaned.lower().strip() in ("help", "menu"):
         await message.reply_text(
-            f"Hi! How can I help you? Please ask your question by tagging me "
-            f"like @{bot_username} your question here",
+            "👋 Hey! Here's what I can help with:",
+            reply_markup=KB_GROUP_MAIN,
             reply_to_message_id=message.message_id,
         )
         return

@@ -193,6 +193,58 @@ def kb_status_support_back() -> InlineKeyboardMarkup:
     )
 
 
+# ── Group Quick Menu keyboards ────────────────────────────────────────
+
+KB_GROUP_MAIN = _mk(
+    [("🌍 What is Endl?", "grp:about"), ("💱 Currencies & fees", "grp:currencies")],
+    [("💸 Payments & transfers", "grp:payments"), ("📋 Onboarding info", "grp:onboarding")],
+    [("🔒 Security", "grp:security"), ("🔐 Check my account status", "grp:status")],
+)
+
+KB_GROUP_ABOUT = _mk(
+    [("Who is it for?", "grp:about_who")],
+    [("Is Endl regulated?", "grp:about_regulated")],
+    [("How is Endl different from Wise?", "grp:about_wise")],
+    [("← Back to menu", "grp:back")],
+)
+
+KB_GROUP_CURRENCIES = _mk(
+    [("What currencies are supported?", "grp:curr_supported")],
+    [("What are the fees?", "grp:curr_fees")],
+    [("What stablecoins does Endl support?", "grp:curr_stablecoins")],
+    [("← Back to menu", "grp:back")],
+)
+
+KB_GROUP_PAYMENTS = _mk(
+    [("How do I receive payments?", "grp:pay_receive")],
+    [("What payment rails are supported?", "grp:pay_rails")],
+    [("Can I send SWIFT transfers?", "grp:pay_swift")],
+    [("How long do withdrawals take?", "grp:pay_time")],
+    [("← Back to menu", "grp:back")],
+)
+
+KB_GROUP_ONBOARDING = _mk(
+    [("How long does onboarding take?", "grp:onb_time")],
+    [("What documents do I need?", "grp:onb_docs")],
+    [("Why is my onboarding delayed?", "grp:onb_delayed")],
+    [("← Back to menu", "grp:back")],
+)
+
+KB_GROUP_SECURITY = _mk(
+    [("Is my money safe?", "grp:sec_safe")],
+    [("How is my data protected?", "grp:sec_data")],
+    [("How are transactions monitored?", "grp:sec_monitoring")],
+    [("← Back to menu", "grp:back")],
+)
+
+KB_GROUP_BACK = _mk([("← Back to menu", "grp:back")])
+
+KB_GROUP_BACK_WITH_STATUS = _mk(
+    [("🔐 Check my account status", "grp:status")],
+    [("← Back to menu", "grp:back")],
+)
+
+
 # ── Name → keyboard resolver (used by free-text handler) ─────────────
 
 def get_kb_by_name(name: str, account_type: str = "individual") -> InlineKeyboardMarkup:

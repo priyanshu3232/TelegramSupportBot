@@ -18,6 +18,8 @@ from utils.keyboards import (
     KB_ABOUT, KB_CURRENCIES, KB_PAY_IND, KB_PAY_BIZ,
     KB_ONBOARDING, KB_CARD, KB_SECURITY_IND, KB_SECURITY_BIZ, KB_SUPPORT,
     KB_OTP_RESEND_OPTIONS,
+    KB_GROUP_MAIN, KB_GROUP_ABOUT, KB_GROUP_CURRENCIES, KB_GROUP_PAYMENTS,
+    KB_GROUP_ONBOARDING, KB_GROUP_SECURITY, KB_GROUP_BACK, KB_GROUP_BACK_WITH_STATUS,
 )
 from utils.otp import generate_otp, store_otp, send_otp_email, cancel_otp
 
@@ -615,6 +617,223 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await update_session(session_key, conversation_state="status_awaiting_email",
                                  email=None)
             return
+
+    # ── GROUP QUICK MENU (grp: prefix) ───────────────────────────────
+    if data.startswith("grp:"):
+        key = data[4:]
+
+        if key == "back":
+            await _edit(query, "👋 Hey! Here's what I can help with:", KB_GROUP_MAIN)
+            return
+
+        # ── Top-level sub-menus ──────────────────────────────────────
+        if key == "about":
+            await _edit(
+                query,
+                "Endl is a global business payments platform — collect payments locally, "
+                "hold funds in multiple currencies, convert between fiat and stablecoins, "
+                "and send global payouts from one dashboard.",
+                KB_GROUP_ABOUT,
+            )
+            return
+
+        if key == "currencies":
+            await _edit(query, "What would you like to know?", KB_GROUP_CURRENCIES)
+            return
+
+        if key == "payments":
+            await _edit(query, "What would you like to know about payments?", KB_GROUP_PAYMENTS)
+            return
+
+        if key == "onboarding":
+            await _edit(query, "What would you like to know about onboarding?", KB_GROUP_ONBOARDING)
+            return
+
+        if key == "security":
+            await _edit(query, "What would you like to know about security?", KB_GROUP_SECURITY)
+            return
+
+        if key == "status":
+            await _edit(
+                query,
+                "Account and verification queries need to stay private to keep your "
+                "details secure 🔒\n\nDM me directly and I'll walk you through your "
+                "KYC or KYB status right away.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        # ── About sub-menu ───────────────────────────────────────────
+        if key == "about_who":
+            await _edit(
+                query,
+                "Endl is built for businesses and individuals that send or receive "
+                "international payments — startups, agencies, SaaS companies, trading "
+                "firms, and global service providers.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        if key == "about_regulated":
+            await _edit(
+                query,
+                "Yes. Endl operates with regulated financial institution partners and applies "
+                "AML screening, transaction monitoring, and KYC/KYB verification across all accounts.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        if key == "about_wise":
+            await _edit(
+                query,
+                "Endl adds stablecoin settlement on top of multi-currency accounts — meaning "
+                "faster transfers, lower FX costs, and the ability to move between fiat and "
+                "digital dollars (USDC/USDT) when needed.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        # ── Currencies sub-menu ──────────────────────────────────────
+        if key == "curr_supported":
+            await _edit(
+                query,
+                "Endl supports USD, EUR, AED, GBP, BRL, and MXN — plus USDC and USDT. "
+                "More currencies and local rails are continuously being added.",
+                _mk(
+                    [("What are the fees?", "grp:curr_fees"),
+                     ("← Back to menu", "grp:back")],
+                ),
+            )
+            return
+
+        if key == "curr_fees":
+            await _edit(
+                query,
+                "Transaction fees are approximately 0.5% per deposit or withdrawal. "
+                "Full pricing is confirmed at account approval.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        if key == "curr_stablecoins":
+            await _edit(
+                query,
+                "Endl supports USDC and USDT. You can convert between fiat currencies and "
+                "digital dollars directly within the dashboard.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        # ── Payments sub-menu ────────────────────────────────────────
+        if key == "pay_receive":
+            await _edit(
+                query,
+                "Once your account is active, generate virtual account details from the "
+                "Endl dashboard and share them with your clients. They send a local transfer — "
+                "no international wire needed on their end.",
+                _mk(
+                    [("What payment rails are supported?", "grp:pay_rails"),
+                     ("← Back to menu", "grp:back")],
+                ),
+            )
+            return
+
+        if key == "pay_rails":
+            await _edit(
+                query,
+                "USD: ACH and Fedwire · EUR: SEPA · GBP: FPS · BRL: PIX · "
+                "MXN: SPEI or CLABE · AED: local UAE transfer · "
+                "SWIFT outgoing: B2B third-party payments only.",
+                _mk(
+                    [("Can I send SWIFT transfers?", "grp:pay_swift"),
+                     ("← Back to menu", "grp:back")],
+                ),
+            )
+            return
+
+        if key == "pay_swift":
+            await _edit(
+                query,
+                "Yes — SWIFT outgoing is supported for business-to-business third-party "
+                "payments only. Incoming SWIFT deposits are not supported; use the virtual "
+                "account details in your dashboard instead.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        if key == "pay_time":
+            await _edit(
+                query,
+                "Some transfers settle instantly, others take 1–3 business days depending "
+                "on the destination currency and payment rail.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        # ── Onboarding sub-menu ──────────────────────────────────────
+        if key == "onb_time":
+            await _edit(
+                query,
+                "Individual KYC takes approximately 1 business day. Business KYB typically "
+                "takes 2–4 business days after all required documents are submitted.",
+                _mk(
+                    [("What documents do I need?", "grp:onb_docs"),
+                     ("← Back to menu", "grp:back")],
+                ),
+            )
+            return
+
+        if key == "onb_docs":
+            await _edit(
+                query,
+                "For individuals: government ID, proof of address, and selfie verification.\n"
+                "For businesses: company registration, shareholder details, articles of "
+                "association, UBO verification, and proof of business activity.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        if key == "onb_delayed":
+            await _edit(
+                query,
+                "Some applications require additional compliance or partner bank review. "
+                "If you're waiting on a status update, DM me and I'll check what's "
+                "happening for you 🔒",
+                KB_GROUP_BACK_WITH_STATUS,
+            )
+            return
+
+        # ── Security sub-menu ────────────────────────────────────────
+        if key == "sec_safe":
+            await _edit(
+                query,
+                "Yes. Endl applies AML monitoring, KYC/KYB verification, and works "
+                "exclusively with regulated financial partners.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        if key == "sec_data":
+            await _edit(
+                query,
+                "Endl applies strict compliance frameworks and security practices to "
+                "protect all personal and business data.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        if key == "sec_monitoring":
+            await _edit(
+                query,
+                "All transactions go through ongoing AML screening and compliance review. "
+                "Any flagged activity is reviewed by our compliance team.",
+                KB_GROUP_BACK,
+            )
+            return
+
+        logger.warning("Unhandled grp: callback key: %s", key)
+        await _edit(query, "👋 Hey! Here's what I can help with:", KB_GROUP_MAIN)
+        return
 
     logger.warning("Unhandled callback data: %s", data)
     await _edit(query, _main_text(account_type), kb_main(account_type))
