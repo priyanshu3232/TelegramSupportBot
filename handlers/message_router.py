@@ -170,16 +170,58 @@ async def _route(
         return
 
     # ── GREETING / FIRST MESSAGE ────────────────────────────────────
-    if state == "greeting" or (state == "active" and is_greeting(text)):
-        response = (
+    if state == "active" and is_greeting(text):
+        # Greeting in an active session → welcome back to Step 0
+        await update.message.reply_text(
             "\U0001f44b Welcome to <b>Endl Support</b>!\n"
-            "I'm here to help you with your account, onboarding status, payments, and more.\n\n"
-            "To get started — are you signing up or using Endl as an <b>Individual</b> or a "
-            "<b>Business</b>?"
+            "I'm here to help with your account, onboarding status, payments, and more.\n\n"
+            "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
+            reply_markup=KB_ACCOUNT_TYPE,
+            parse_mode="HTML",
+            **reply_kw,
         )
+        return
+
+    if state == "greeting":
         await update_session(session_key, conversation_state="active")
-        await update.message.reply_text(response, reply_markup=KB_ACCOUNT_TYPE,
-                                        parse_mode="HTML", **reply_kw)
+        if is_greeting(text):
+            # Pure greeting → Step 0 welcome
+            await update.message.reply_text(
+                "\U0001f44b Welcome to <b>Endl Support</b>!\n"
+                "I'm here to help with your account, onboarding status, payments, and more.\n\n"
+                "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
+                reply_markup=KB_ACCOUNT_TYPE,
+                parse_mode="HTML",
+                **reply_kw,
+            )
+        else:
+            # First message has clear intent — answer it then ask account type
+            result = await get_freetext_response(text, None, [])
+            intent = result.get("intent", "unknown")
+            reply = result.get("reply", "")
+            acct_hint = result.get("account_type_hint")
+            if acct_hint in ("individual", "business"):
+                await update_session(session_key, user_type=acct_hint)
+                account_type = acct_hint
+            if intent in ("greeting", "menu") or not reply:
+                await update.message.reply_text(
+                    "\U0001f44b Welcome to <b>Endl Support</b>!\n"
+                    "I'm here to help with your account, onboarding status, payments, and more.\n\n"
+                    "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
+                    reply_markup=KB_ACCOUNT_TYPE,
+                    parse_mode="HTML",
+                    **reply_kw,
+                )
+            else:
+                await save_message(session_key, "user", text)
+                await update.message.reply_text(reply, **reply_kw)
+                await save_message(session_key, "assistant", reply)
+                await update.message.reply_text(
+                    "Before I pull that up — are you an <b>Individual</b> or a <b>Business</b> user?",
+                    reply_markup=KB_ACCOUNT_TYPE,
+                    parse_mode="HTML",
+                    **reply_kw,
+                )
         return
 
     # ── STATUS CHECK: AWAITING EMAIL ────────────────────────────────
@@ -308,6 +350,19 @@ async def _route(
     buttons_name      = result.get("buttons", "main_menu")
     acct_hint         = result.get("account_type_hint")
 
+    # Account type switch mid-session
+    if intent == "account_switch" and acct_hint in ("individual", "business"):
+        account_type = acct_hint
+        await update_session(session_key, user_type=acct_hint, unrecognized_count=0)
+        await save_message(session_key, "user", text)
+        await update.message.reply_text(
+            reply or _main_label(acct_hint),
+            reply_markup=kb_main(acct_hint),
+            **reply_kw,
+        )
+        await save_message(session_key, "assistant", reply or _main_label(acct_hint))
+        return
+
     # Apply account type hint if we don't have one yet
     if acct_hint and acct_hint in ("individual", "business") and not session.get("user_type"):
         account_type = acct_hint
@@ -345,7 +400,7 @@ async def _route(
     # Resolve keyboard
     kb = get_kb_by_name(buttons_name, account_type)
 
-    # For status_flow intent, if user already has verified email skip OTP confirmation
+    # For status_flow intent, check if email is already verified (Step 11)
     if intent in ("check_status", "frustration") and buttons_name == "status_flow":
         if not _smtp_ok():
             reply = (
@@ -356,11 +411,19 @@ async def _route(
         else:
             verified_email = await get_verified_email(user_id)
             if verified_email:
+                # Step 11: already verified — skip email/OTP, go straight to status fetch
                 await update_session(session_key, email=verified_email)
-                kb = _mk(
-                    [("Yes, check my status", "status:use_verified"),
-                     ("No, something else", "nav:back")],
+                await save_message(session_key, "user", text)
+                if reply:
+                    await update.message.reply_text(reply, **reply_kw)
+                await update.message.reply_text(
+                    f"I already have your verified email on file as <b>{verified_email}</b>. "
+                    "Let me check your status again.",
+                    parse_mode="HTML",
+                    **reply_kw,
                 )
+                await _status_placeholder(update, session_key, verified_email, reply_kw)
+                return
 
     # Send the reply + buttons
     if reply:

@@ -186,10 +186,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data.startswith("payi:"):
         key = data[5:]
         answers = {
-            "receive": (
-                "Once your account is active, generate virtual account details directly from your "
-                "Endl dashboard. Share these with your clients to receive local bank transfers."
-            ),
+            "receive": None,  # handled separately below for custom buttons
             "virtual": (
                 "Virtual accounts give your business local bank account details in supported "
                 "currencies (e.g. USD, EUR). Your clients send payments as if to a local bank — "
@@ -203,12 +200,43 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "Yes. Endl allows you to send payouts to partners or vendors across multiple "
                 "countries from your dashboard."
             ),
-            "time": (
-                "Withdrawal times depend on the destination currency and payment rail. Some "
-                "transfers settle instantly; others may take <b>1–3 business days</b>."
-            ),
+            "time": None,  # handled separately below for custom buttons
         }
-        if key == "delayed":
+        if key == "receive":
+            await _edit(
+                query,
+                "Once your account is active, generate virtual account details directly from your "
+                "Endl dashboard. Share these with your clients to receive local bank transfers.",
+                _mk(
+                    [("What are virtual accounts?", "payi:virtual"),
+                     ("← Back to menu", "nav:back")],
+                ),
+            )
+        elif key == "time":
+            await _edit(
+                query,
+                "Withdrawal times depend on the destination currency and payment rail. Some "
+                "transfers settle instantly; others may take <b>1–3 business days</b>.",
+                _mk(
+                    [("What payment rails are supported?", "payi:rails"),
+                     ("Ask another question", "nav:pay_ind"),
+                     ("← Back to menu", "nav:back")],
+                ),
+            )
+        elif key == "rails":
+            await _edit(
+                query,
+                "Supported receiving rails by currency:\n"
+                "• <b>USD</b> — ACH and Fedwire\n"
+                "• <b>EUR</b> — SEPA and SEPA Instant\n"
+                "• <b>GBP</b> — Faster Payments (FPS)\n"
+                "• <b>BRL</b> — PIX\n"
+                "• <b>MXN</b> — SPEI or CLABE\n"
+                "• <b>AED</b> — Local UAE bank transfer\n\n"
+                "Incoming SWIFT is not supported.",
+                kb_ask_back("pay_ind"),
+            )
+        elif key == "delayed":
             await _edit(
                 query,
                 "Most delays are caused by banking processing times or compliance checks. "
@@ -216,7 +244,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "support with the transaction details.",
                 _mk([("🎧 Contact support now", "nav:support"), ("← Back to menu", "nav:back")]),
             )
-        elif key in answers:
+        elif key in answers and answers[key] is not None:
             await _edit(query, answers[key], kb_ask_back("pay_ind"))
         return
 
@@ -286,8 +314,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "📝 Business description\n\n"
                 "Additional documents may be requested depending on your jurisdiction.",
                 _mk(
-                    [("Ask another question", "nav:onboarding"),
-                     ("🎧 Talk to support", "nav:support")],
+                    [("🔍 Check my KYB status", "status:check"),
+                     ("Ask another question", "nav:onboarding")],
                     [("← Back to menu", "nav:back")],
                 ),
             )
@@ -297,7 +325,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "KYB verification typically takes <b>2–4 business days</b> after all required "
                 "documents are submitted. Individual KYC is usually <b>1 business day</b>. "
                 "Exact timelines may vary depending on document completeness and compliance checks.",
-                kb_ask_back("onboarding"),
+                _mk(
+                    [("🔍 Check my KYB status", "status:check")],
+                    [("← Back to menu", "nav:back")],
+                ),
             )
         elif key == "delayed":
             await _edit(
@@ -358,27 +389,46 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # ── CORPORATE CARD (Step 7) ───────────────────────────────────────
     if data.startswith("card:"):
         key = data[5:]
-        answers = {
-            "offered": (
+        if key == "offered":
+            await _edit(
+                query,
                 "Yes! Endl offers corporate cards for managing company expenses, subscriptions, "
-                "and employee spending — with customisable limits and controls."
-            ),
-            "issue": (
+                "and employee spending — with customisable limits and controls.",
+                _mk(
+                    [("How do I issue cards for my team?", "card:issue"),
+                     ("← Back to menu", "nav:back")],
+                ),
+            )
+        elif key == "issue":
+            await _edit(
+                query,
                 "Multiple corporate cards can be issued directly from your Endl dashboard. Each "
-                "card can be assigned to a team member with individual spending controls."
-            ),
-            "limits": (
+                "card can be assigned to a team member with individual spending controls.",
+                _mk(
+                    [("Can I set spending limits per card?", "card:limits"),
+                     ("← Back to menu", "nav:back")],
+                ),
+            )
+        elif key == "limits":
+            await _edit(
+                query,
                 "Yes — you can set customisable spending limits and controls per employee or per "
-                "department from the dashboard."
-            ),
-            "manage": (
+                "department from the dashboard.",
+                kb_ask_back("card"),
+            )
+        elif key == "manage":
+            await _edit(
+                query,
                 "The Endl dashboard gives you a centralised view of all card activity, with "
-                "controls to adjust limits, pause cards, and review transactions."
-            ),
-            "currencies": "Cards are supported for all currencies active on your Endl account.",
-        }
-        if key in answers:
-            await _edit(query, answers[key], kb_ask_back("card"))
+                "controls to adjust limits, pause cards, and review transactions.",
+                kb_ask_back("card"),
+            )
+        elif key == "currencies":
+            await _edit(
+                query,
+                "Cards are supported for all currencies active on your Endl account.",
+                kb_ask_back("card"),
+            )
         return
 
     # ── SECURITY (Step 8) ─────────────────────────────────────────────
@@ -451,17 +501,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
             verified_email = await get_verified_email(user_id)
             if verified_email:
+                # Step 11: already verified — skip email/OTP, go straight to status
+                await update_session(session_key, email=verified_email)
                 await _edit(
                     query,
-                    f"I already have your verified email on file: <b>{verified_email}</b>\n\n"
-                    "Would you like to check your status with this email?",
-                    _mk(
-                        [("Yes, use this email", "status:use_verified"),
-                         ("Use a different email", "status:new_email")],
-                        [("← Back to menu", "nav:back")],
-                    ),
+                    f"I already have your verified email on file as <b>{verified_email}</b>. "
+                    "Let me check your status again\u2026",
                 )
-                await update_session(session_key, email=verified_email)
+                await _do_status_lookup(query, session_key, user_id, verified_email)
                 return
 
             await _edit(
