@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
+    "@upstash/redis": "^1.37.0",
+    "dotenv": "^17.3.1"
+  }
+}
