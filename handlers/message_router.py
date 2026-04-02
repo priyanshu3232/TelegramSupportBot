@@ -142,7 +142,7 @@ async def handle_non_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "I can't read images or files just yet — but you can describe what you see "
         "and I'll do my best to help, or send it directly to our support team.",
         reply_markup=_mk(
-            [("💬 Talk to support", "nav:support"), ("◀️ Back to menu", "nav:back")],
+            [("Talk to support", "nav:support"), ("◀ Back", "nav:back")],
         ),
     )
 
@@ -422,7 +422,7 @@ async def _route(
                     reply_markup=_mk(
                         [(f"✅ Use {verified_email}", "status:use_verified")],
                         [("📧 Use a different email", "status:new_email")],
-                        [("◀️ Back to menu", "nav:back")],
+                        [("◀ Back", "nav:back")],
                     ),
                     **reply_kw,
                 )
@@ -481,8 +481,8 @@ async def _send_otp(
             "You've reached the maximum number of resend attempts for security reasons. "
             "Please wait about <b>15 minutes</b> before trying again, or contact our support team.",
             parse_mode="HTML",
-            reply_markup=_mk([("🎧 Contact support", "nav:support"),
-                               ("◀️ Back to menu", "nav:back")]),
+            reply_markup=_mk([("Contact support", "nav:support"),
+                               ("◀ Back", "nav:back")]),
             **reply_kw,
         )
         return
@@ -502,8 +502,8 @@ async def _send_otp(
         await update.message.reply_text(
             "I wasn't able to send the verification email. Please check the address and try "
             "again, or contact our support team.",
-            reply_markup=_mk([("🎧 Contact support", "nav:support"),
-                               ("◀️ Back to menu", "nav:back")]),
+            reply_markup=_mk([("Contact support", "nav:support"),
+                               ("◀ Back", "nav:back")]),
             **reply_kw,
         )
         await update_session(session_key, conversation_state="active")
@@ -523,9 +523,8 @@ async def _status_placeholder(
         "Is there anything else I can help you with?",
         parse_mode="HTML",
         reply_markup=_mk(
-            [("🚩 Flag query for onboarding team", "status:flag")],
-            [("👤 Connect me to a live agent", "nav:support")],
-            [("◀️ Back to menu", "nav:back")],
+            [("Flag for onboarding team", "status:flag"), ("Live agent", "nav:support")],
+            [("◀ Back", "nav:back")],
         ),
         **reply_kw,
     )
@@ -533,4 +532,4 @@ async def _status_placeholder(
 
 
 def _main_label(account_type: str = "individual") -> str:
-    return "Great! Here's what I can help you with today \U0001f447"
+    return "How can I help you today? \U0001f447"
