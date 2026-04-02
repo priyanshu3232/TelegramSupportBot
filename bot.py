@@ -17,7 +17,7 @@ from database.db import init_db
 from database.models import get_user_tickets
 from handlers.start import start_command, help_command
 from handlers.message_router import handle_message, handle_non_text
-from handlers.group_handler import handle_group_message, handle_edited_group_message
+from handlers.group_handler import handle_group_message, handle_edited_group_message, handle_new_chat_members
 from handlers.callback_handler import handle_callback
 
 logging.basicConfig(
@@ -81,8 +81,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         if update.message:
             logger.error("Message text: %s", update.message.text[:100] if update.message.text else "N/A")
             await update.message.reply_text(
-                "Something went wrong. Please try again, or reach out to our "
-                f"live support: {SUPPORT_LINK}"
+                "Oops, something unexpected happened on my end. Please try again, "
+                f"and if it persists, our team is here to help: {SUPPORT_LINK}"
             )
 
 
@@ -170,6 +170,14 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & ~filters.COMMAND & (filters.ChatType.GROUP | filters.ChatType.SUPERGROUP),
             handle_group_message,
+        )
+    )
+
+    # Bot added to group — send intro message
+    app.add_handler(
+        MessageHandler(
+            filters.StatusUpdate.NEW_CHAT_MEMBERS,
+            handle_new_chat_members,
         )
     )
 

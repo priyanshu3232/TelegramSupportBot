@@ -14,6 +14,7 @@ import time
 import traceback
 
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from config import SUPPORT_LINK, SMTP_USER, SMTP_PASSWORD
@@ -23,14 +24,15 @@ from database.models import (
 )
 from handlers.greeting import is_greeting
 from utils.keyboards import (
-    KB_ACCOUNT_TYPE, kb_main, KB_SUPPORT, KB_OTP_RESEND_OPTIONS,
+    kb_main, KB_SUPPORT, KB_OTP_RESEND_OPTIONS,
     KB_OTP_EXPIRED, KB_OTP_LOCKED, KB_URGENCY, kb_back, _mk,
-    get_kb_by_name,
+    get_kb_by_name, KB_OTP_CANCEL,
 )
 from ai.claude_client import get_freetext_response, get_ai_response
 from ai.system_prompt import get_group_system_prompt
 from utils.otp import generate_otp, store_otp, verify_otp, cancel_otp, send_otp_email
 from utils.rate_limiter import is_rate_limited
+from flows.status_progress import get_status_guidance
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +105,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if is_rate_limited(user_id):
         await update.message.reply_text(
-            "You're sending messages too quickly — please wait a moment and try again.",
+            "You're sending messages a bit fast — please wait about 30 seconds and try again.",
             **reply_kw,
         )
         return
@@ -118,8 +120,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             pass
         try:
             await update.message.reply_text(
-                "Something went wrong on my end. Please try again or reach out to "
-                f"our live support: {SUPPORT_LINK}",
+                "Oops, something unexpected happened on my end. Please try again, and if "
+                f"it persists, our team is here to help: {SUPPORT_LINK}",
                 **reply_kw,
             )
         except Exception:
@@ -137,9 +139,11 @@ async def handle_non_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     session = await get_or_create_session(chat.id, user.id)
     account_type = session.get("user_type") or "individual"
     await update.message.reply_text(
-        "I can only process text messages at the moment. "
-        "If you have a document-related query, please describe it and I'll do my best to help.",
-        reply_markup=kb_back(),
+        "I can't read images or files just yet — but you can describe what you see "
+        "and I'll do my best to help, or send it directly to our support team.",
+        reply_markup=_mk(
+            [("💬 Talk to support", "nav:support"), ("◀️ Back to menu", "nav:back")],
+        ),
     )
 
 
@@ -162,6 +166,8 @@ async def _route(
     # ── GROUP CHAT — conversational mode, no buttons ────────────────
     is_group = chat_type in ("group", "supergroup")
     if is_group:
+        # Send typing indicator while waiting for AI response
+        await update.message.chat.send_action(ChatAction.TYPING)
         history = await get_conversation_history(session_key, limit=6)
         group_reply = await get_ai_response(get_group_system_prompt(), history, text)
         await save_message(session_key, "user", text)
@@ -169,15 +175,11 @@ async def _route(
         await save_message(session_key, "assistant", group_reply)
         return
 
-    # ── GREETING / FIRST MESSAGE ────────────────────────────────────
+    # ── GREETING in active session → show main menu ──────────────────
     if state == "active" and is_greeting(text):
-        # Greeting in an active session → welcome back to Step 0
         await update.message.reply_text(
-            "\U0001f44b Welcome to <b>Endl Support</b>!\n"
-            "I'm here to help with your account, onboarding status, payments, and more.\n\n"
-            "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
-            reply_markup=KB_ACCOUNT_TYPE,
-            parse_mode="HTML",
+            "👋 Welcome back! Here's what I can help you with:",
+            reply_markup=kb_main(),
             **reply_kw,
         )
         return
@@ -185,43 +187,34 @@ async def _route(
     if state == "greeting":
         await update_session(session_key, conversation_state="active")
         if is_greeting(text):
-            # Pure greeting → Step 0 welcome
+            # Pure greeting → show welcome + main menu
             await update.message.reply_text(
                 "\U0001f44b Welcome to <b>Endl Support</b>!\n"
-                "I'm here to help with your account, onboarding status, payments, and more.\n\n"
-                "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
-                reply_markup=KB_ACCOUNT_TYPE,
+                "I'm here to help with your account, onboarding, payments, and more.\n\n"
+                "How can I help you today?",
+                reply_markup=kb_main(),
                 parse_mode="HTML",
                 **reply_kw,
             )
         else:
-            # First message has clear intent — answer it then ask account type
+            # First message has clear intent — answer it then show menu
+            await update.message.chat.send_action(ChatAction.TYPING)
             result = await get_freetext_response(text, None, [])
             intent = result.get("intent", "unknown")
             reply = result.get("reply", "")
-            acct_hint = result.get("account_type_hint")
-            if acct_hint in ("individual", "business"):
-                await update_session(session_key, user_type=acct_hint)
-                account_type = acct_hint
             if intent in ("greeting", "menu") or not reply:
                 await update.message.reply_text(
                     "\U0001f44b Welcome to <b>Endl Support</b>!\n"
-                    "I'm here to help with your account, onboarding status, payments, and more.\n\n"
-                    "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
-                    reply_markup=KB_ACCOUNT_TYPE,
+                    "I'm here to help with your account, onboarding, payments, and more.\n\n"
+                    "How can I help you today?",
+                    reply_markup=kb_main(),
                     parse_mode="HTML",
                     **reply_kw,
                 )
             else:
                 await save_message(session_key, "user", text)
-                await update.message.reply_text(reply, **reply_kw)
+                await update.message.reply_text(reply, reply_markup=kb_main(), **reply_kw)
                 await save_message(session_key, "assistant", reply)
-                await update.message.reply_text(
-                    "Before I pull that up — are you an <b>Individual</b> or a <b>Business</b> user?",
-                    reply_markup=KB_ACCOUNT_TYPE,
-                    parse_mode="HTML",
-                    **reply_kw,
-                )
         return
 
     # ── STATUS CHECK: AWAITING EMAIL ────────────────────────────────
@@ -241,7 +234,9 @@ async def _route(
         if not _EMAIL_REGEX.match(email_input):
             await update.message.reply_text(
                 "That doesn't look like a valid email address. "
-                "Could you double-check and re-enter it?",
+                "Please double-check and re-enter it.\n"
+                "<i>(e.g., name@company.com)</i>",
+                parse_mode="HTML",
                 **reply_kw,
             )
             return
@@ -263,7 +258,9 @@ async def _route(
                                  email=None)
             await update.message.reply_text(
                 "No problem — could you share the correct email address?\n\n"
-                "📧 Please enter your registered email.",
+                "📧 Please enter your registered email.\n"
+                "<i>(e.g., name@company.com)</i>",
+                parse_mode="HTML",
                 **reply_kw,
             )
             return
@@ -279,6 +276,7 @@ async def _route(
             await update.message.reply_text(
                 "I was expecting a 6-digit verification code — what you sent doesn't look "
                 "quite right. Could you check your email and share just the 6-digit number?",
+                reply_markup=KB_OTP_CANCEL,
                 **reply_kw,
             )
             return
@@ -289,18 +287,18 @@ async def _route(
         if success:
             await save_verified_user(chat_id, user_id, email)
             await update.message.reply_text(
-                "\u2705 Identity verified successfully!\n"
+                "\U0001f389 Identity verified successfully!\n"
                 "Let me fetch your onboarding status now — one moment\u2026",
                 **reply_kw,
             )
-            await _status_placeholder(update, session_key, email, reply_kw)
+            await _status_placeholder(update, session_key, email, reply_kw, account_type)
 
         elif reason == "expired":
             await update.message.reply_text(
                 "It looks like that code has expired (codes are only valid for 10 minutes). "
                 "Shall I send you a fresh one?",
                 reply_markup=_mk(
-                    [("Yes, send new code", "otp:resend"), ("No, cancel", "nav:back")]
+                    [("✅ Yes, send new code", "otp:resend"), ("❌ No, cancel", "nav:back")]
                 ),
                 **reply_kw,
             )
@@ -310,7 +308,7 @@ async def _route(
                 "I'm sorry — your verification session has been locked after multiple incorrect "
                 "attempts. This is a security measure to protect your account.\n\n"
                 "Please contact our support team directly for assistance.",
-                reply_markup=_mk([("🎧 Contact support now", "nav:support")]),
+                reply_markup=KB_OTP_LOCKED,
                 **reply_kw,
             )
         else:
@@ -322,7 +320,7 @@ async def _route(
     if state == "awaiting_flag_query":
         await update_session(session_key, conversation_state="active")
         await update.message.reply_text(
-            "Got it. Your query has been flagged and our onboarding team will review it and "
+            "Got it \u2705 Your query has been flagged and our onboarding team will review it and "
             "follow up with you within 1 business day.\n\nIs there anything else I can help with?",
             reply_markup=kb_main(account_type),
             **reply_kw,
@@ -340,6 +338,9 @@ async def _route(
             **reply_kw,
         )
         return
+
+    # Send typing indicator while Claude is thinking
+    await update.message.chat.send_action(ChatAction.TYPING)
 
     # Call Claude for intent detection + natural reply
     history = await get_conversation_history(session_key, limit=6)
@@ -374,15 +375,15 @@ async def _route(
         await update_session(session_key, frustration_count=frustration_count)
         if frustration_count >= 2 and buttons_name != "urgency":
             buttons_name = "urgency"
+        # Use warmer frustration reply
+        if reply and not any(w in reply.lower() for w in ("hear you", "understand", "sorry", "apologise", "apologize")):
+            reply = "I hear you, and I'm sorry this has been frustrating. Let me help you get this sorted right now.\n\n" + reply
 
-    # Greeting — show welcome, don't show a reply
+    # Greeting — show welcome + menu
     if intent == "greeting":
         await update.message.reply_text(
-            "\U0001f44b Welcome to <b>Endl Support</b>!\n"
-            "I'm here to help with your account, onboarding status, payments, and more.\n\n"
-            "Are you using Endl as an <b>Individual</b> or a <b>Business</b>?",
-            reply_markup=KB_ACCOUNT_TYPE,
-            parse_mode="HTML",
+            "👋 Welcome back! Here's what I can help you with:",
+            reply_markup=kb_main(),
             **reply_kw,
         )
         return
@@ -411,18 +412,20 @@ async def _route(
         else:
             verified_email = await get_verified_email(user_id)
             if verified_email:
-                # Step 11: already verified — skip email/OTP, go straight to status fetch
-                await update_session(session_key, email=verified_email)
                 await save_message(session_key, "user", text)
                 if reply:
                     await update.message.reply_text(reply, **reply_kw)
                 await update.message.reply_text(
-                    f"I already have your verified email on file as <b>{verified_email}</b>. "
-                    "Let me check your status again.",
+                    f"I have your verified email on file: <b>{verified_email}</b>.\n\n"
+                    "Would you like to check your status with this email, or use a different one?",
                     parse_mode="HTML",
+                    reply_markup=_mk(
+                        [(f"✅ Use {verified_email}", "status:use_verified")],
+                        [("📧 Use a different email", "status:new_email")],
+                        [("◀️ Back to menu", "nav:back")],
+                    ),
                     **reply_kw,
                 )
-                await _status_placeholder(update, session_key, verified_email, reply_kw)
                 return
 
     # Send the reply + buttons
@@ -442,7 +445,14 @@ async def _route(
     else:
         unrecognized_count = (session.get("unrecognized_count") or 0) + 1
         await update_session(session_key, unrecognized_count=unrecognized_count)
-        if unrecognized_count >= 2:
+        if unrecognized_count == 2:
+            # 2nd attempt — suggest rephrasing
+            await update.message.reply_text(
+                "I'm having trouble understanding — could you try rephrasing your question?",
+                **reply_kw,
+            )
+        elif unrecognized_count >= 3:
+            # 3rd attempt — fall back to main menu
             await update_session(session_key, unrecognized_count=0)
             await update.message.reply_text(
                 "I didn't quite catch that — let me take you back to the main menu.",
@@ -469,8 +479,10 @@ async def _send_otp(
     if not stored:
         await update.message.reply_text(
             "You've reached the maximum number of resend attempts for security reasons. "
-            "Please wait 15 minutes before trying again, or contact our support team.",
-            reply_markup=_mk([("🎧 Contact support", "nav:support")]),
+            "Please wait about <b>15 minutes</b> before trying again, or contact our support team.",
+            parse_mode="HTML",
+            reply_markup=_mk([("🎧 Contact support", "nav:support"),
+                               ("◀️ Back to menu", "nav:back")]),
             **reply_kw,
         )
         return
@@ -481,7 +493,7 @@ async def _send_otp(
             f"Thank you! I've sent a <b>6-digit verification code</b> to:\n📧 <b>{email}</b>\n\n"
             "Please check your inbox (and spam folder, just in case) and share the code here.\n"
             "<i>The code is valid for 10 minutes.</i>",
-            reply_markup=_mk([("Change my email", "otp:change_email")]),
+            reply_markup=KB_OTP_CANCEL,
             parse_mode="HTML",
             **reply_kw,
         )
@@ -491,7 +503,7 @@ async def _send_otp(
             "I wasn't able to send the verification email. Please check the address and try "
             "again, or contact our support team.",
             reply_markup=_mk([("🎧 Contact support", "nav:support"),
-                               ("← Back to menu", "nav:back")]),
+                               ("◀️ Back to menu", "nav:back")]),
             **reply_kw,
         )
         await update_session(session_key, conversation_state="active")
@@ -502,26 +514,23 @@ async def _status_placeholder(
     session_key: str,
     email: str,
     reply_kw: dict,
+    account_type: str = "individual",
 ) -> None:
-    """
-    Placeholder response shown after OTP verification until Sumsub is live.
-    Replace this function body when the Sumsub endpoint is ready.
-    """
     await update.message.reply_text(
-        "I'm sorry — our verification system is temporarily unavailable. "
-        "This is a known issue on our end and is being resolved.\n\n"
-        "Here's what I can do for you right now:",
+        f"✅ Your identity has been verified.\n\n"
+        f"We've raised a support ticket for your onboarding status — our team will follow up "
+        f"with you at <b>{email}</b> within 1 business day.\n\n"
+        "Is there anything else I can help you with?",
+        parse_mode="HTML",
         reply_markup=_mk(
             [("🚩 Flag query for onboarding team", "status:flag")],
-            [("📋 View general onboarding info", "status:info")],
             [("👤 Connect me to a live agent", "nav:support")],
+            [("◀️ Back to menu", "nav:back")],
         ),
         **reply_kw,
     )
     await update_session(session_key, conversation_state="active")
 
 
-def _main_label(account_type: str) -> str:
-    if account_type == "business":
-        return "Got it! Here's how I can help your business today \U0001f447"
-    return "Got it! Here's how I can help you today \U0001f447"
+def _main_label(account_type: str = "individual") -> str:
+    return "Great! Here's what I can help you with today \U0001f447"

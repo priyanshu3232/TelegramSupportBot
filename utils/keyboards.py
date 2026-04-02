@@ -14,122 +14,116 @@ def _mk(*rows) -> InlineKeyboardMarkup:
     ])
 
 
-# ── Step 0: Entry point ───────────────────────────────────────────────
-KB_ACCOUNT_TYPE = _mk(
-    [("👤 Individual", "acct:individual"), ("🏢 Business", "acct:business")],
-)
-
-
-# ── Steps 1A / 1B: Main menus ─────────────────────────────────────────
-def kb_main(account_type: str) -> InlineKeyboardMarkup:
-    if account_type == "business":
-        return _mk(
-            [("🔍 Check my KYB status", "status:check")],
-            [("📋 Onboarding & documents", "nav:onboarding")],
-            [("🌍 About Endl", "nav:about"), ("💸 Payments & SWIFT", "nav:pay_biz")],
-            [("💳 Corporate cards", "nav:card"), ("🔒 Security & compliance", "nav:security")],
-            [("🎧 Talk to support", "nav:support")],
-        )
-    # Individual (default)
+# ── Main menu (unified — no individual/business split) ────────────────
+def kb_main(account_type: str = "individual") -> InlineKeyboardMarkup:
     return _mk(
-        [("🔍 Check my KYC status", "status:check")],
-        [("🌍 About Endl", "nav:about"), ("💱 Currencies & fees", "nav:currencies")],
-        [("💸 Payments & transfers", "nav:pay_ind")],
-        [("💳 Corporate card", "nav:card"), ("🔒 Security", "nav:security")],
-        [("🎧 Talk to support", "nav:support")],
+        [("📊 Check my Onboarding Status (KYC/KYB)", "status:check")],
+        [("📋 Onboarding & Documents", "nav:onboarding")],
+        [("ℹ️ About Endl", "nav:about")],
+        [("💱 Currencies & Fees", "nav:currencies")],
+        [("📤 Payments & Transfers", "nav:payments")],
+        [("💳 Visa Cards for Spending", "nav:card")],
+        [("🛡️ Security & Compliance", "nav:security")],
+        [("🚀 Getting Started", "nav:getting_started")],
+        [("💬 Talk to Support Team", "nav:support")],
     )
 
 
 # ── Step 2: About Endl ───────────────────────────────────────────────
 KB_ABOUT = _mk(
-    [("What is Endl?", "about:what_is")],
-    [("Who can use Endl?", "about:who")],
-    [("What countries are supported?", "about:countries")],
-    [("Is Endl regulated?", "about:regulated")],
-    [("How is Endl different from Wise or Payoneer?", "about:different")],
-    [("← Back to menu", "nav:back")],
+    [("🏦 What is Endl?", "about:what_is")],
+    [("👥 Who can use Endl?", "about:who")],
+    [("🌍 What countries are supported?", "about:countries")],
+    [("📜 Is Endl regulated?", "about:regulated")],
+    [("⚡ Endl vs Wise/Payoneer", "about:different")],
+    [("◀️ Back to menu", "nav:back")],
 )
 
 
 # ── Step 3: Currencies & fees ─────────────────────────────────────────
 KB_CURRENCIES = _mk(
-    [("What currencies are supported?", "curr:supported")],
-    [("What are the transaction fees?", "curr:fees")],
-    [("Are there FX conversion fees?", "curr:fx")],
-    [("What stablecoins are supported?", "curr:stablecoins")],
-    [("← Back to menu", "nav:back")],
+    [("💵 What currencies are supported?", "curr:supported")],
+    [("💰 What are the transaction fees?", "curr:fees")],
+    [("🔄 Are there FX conversion fees?", "curr:fx")],
+    [("🪙 What stablecoins are supported?", "curr:stablecoins")],
+    [("◀️ Back to menu", "nav:back")],
 )
 
 
-# ── Step 4: Payments (Individual) ────────────────────────────────────
-KB_PAY_IND = _mk(
-    [("How do I receive payments?", "payi:receive")],
-    [("What are virtual accounts?", "payi:virtual")],
-    [("How do I convert funds?", "payi:convert")],
-    [("Can I send global payouts?", "payi:payouts")],
-    [("How long do withdrawals take?", "payi:time")],
-    [("My payment is delayed", "payi:delayed")],
-    [("← Back to menu", "nav:back")],
+# ── Payments & Transfers (unified) ───────────────────────────────────
+KB_PAYMENTS = _mk(
+    [("📥 How do I receive payments?", "pay:receive")],
+    [("🏧 What are virtual accounts?", "pay:virtual")],
+    [("🔄 How do I convert funds?", "pay:convert")],
+    [("🌐 Can I send global payouts?", "pay:payouts")],
+    [("📤 Can I send SWIFT transfers?", "pay:swift_out")],
+    [("📥 Can I receive SWIFT deposits?", "pay:swift_in")],
+    [("🛤️ What payment rails are supported?", "pay:rails")],
+    [("⏳ How long do withdrawals take?", "pay:time")],
+    [("⚠️ My payment is delayed", "pay:delayed")],
+    [("◀️ Back to menu", "nav:back")],
 )
 
-
-# ── Step 5: Payments & SWIFT (Business) ──────────────────────────────
-KB_PAY_BIZ = _mk(
-    [("Can I receive SWIFT deposits?", "payb:swift_in")],
-    [("Can I send SWIFT transfers?", "payb:swift_out")],
-    [("What payment rails are supported?", "payb:rails")],
-    [("How long do withdrawals take?", "payb:time")],
-    [("My payment is delayed", "payb:delayed")],
-    [("← Back to menu", "nav:back")],
-)
+# Keep legacy names for backward compat in resolver
+KB_PAY_IND = KB_PAYMENTS
+KB_PAY_BIZ = KB_PAYMENTS
 
 
 # ── Step 6: Onboarding & documents (Business) ────────────────────────
 KB_ONBOARDING = _mk(
-    [("What documents are required?", "onb:docs")],
-    [("How long does onboarding take?", "onb:time")],
-    [("Why is my onboarding delayed?", "onb:delayed")],
-    [("My verification failed", "onb:failed")],
-    [("My proof of address was rejected", "onb:poa")],
-    [("KYB still shows 'in progress'", "onb:progress")],
-    [("Can I update my business details?", "onb:update")],
-    [("When will I hear back?", "onb:hear")],
-    [("← Back to menu", "nav:back")],
+    [("📄 What documents are required?", "onb:docs")],
+    [("⏱️ How long does onboarding take?", "onb:time")],
+    [("🔍 Why is my onboarding delayed?", "onb:delayed")],
+    [("❌ My verification failed", "onb:failed")],
+    [("📬 My proof of address was rejected", "onb:poa")],
+    [("⏳ KYB still shows 'in progress'", "onb:progress")],
+    [("✏️ Can I update my business details?", "onb:update")],
+    [("🔔 When will I hear back?", "onb:hear")],
+    [("◀️ Back to menu", "nav:back")],
 )
 
 
-# ── Step 7: Corporate card ────────────────────────────────────────────
+# ── Step 7: Visa Cards for Spending ──────────────────────────────────
 KB_CARD = _mk(
-    [("Does Endl offer corporate cards?", "card:offered")],
-    [("How do I issue cards for my team?", "card:issue")],
-    [("Can I set spending limits per card?", "card:limits")],
-    [("How do I manage expenses?", "card:manage")],
-    [("Which currencies can cards be used in?", "card:currencies")],
-    [("← Back to menu", "nav:back")],
+    [("💳 Does Endl offer Visa cards?", "card:offered")],
+    [("👥 How do I issue cards for my team?", "card:issue")],
+    [("📏 Can I set spending limits per card?", "card:limits")],
+    [("📊 How do I manage expenses?", "card:manage")],
+    [("🌍 Which currencies can cards be used in?", "card:currencies")],
+    [("🆕 How do I get a Visa card?", "card:apply")],
+    [("◀️ Back to menu", "nav:back")],
 )
 
 
-# ── Step 8: Security ──────────────────────────────────────────────────
-KB_SECURITY_IND = _mk(
-    [("Is my money safe?", "sec:safe")],
-    [("How is my data protected?", "sec:data")],
-    [("← Back to menu", "nav:back")],
+# ── Step 8: Security & Compliance ─────────────────────────────────────
+KB_SECURITY = _mk(
+    [("🔐 Is my money safe?", "sec:safe")],
+    [("🛡️ How is my data protected?", "sec:data")],
+    [("📡 How are transactions monitored?", "sec:monitoring")],
+    [("◀️ Back to menu", "nav:back")],
 )
 
-KB_SECURITY_BIZ = _mk(
-    [("Is my money safe?", "sec:safe")],
-    [("How is my data protected?", "sec:data")],
-    [("How are transactions monitored?", "sec:monitoring")],
-    [("← Back to menu", "nav:back")],
-)
+# Keep legacy names for backward compat
+KB_SECURITY_IND = KB_SECURITY
+KB_SECURITY_BIZ = KB_SECURITY
 
 
-# ── Step 9: Talk to support ───────────────────────────────────────────
+# ── Step 9: Talk to Support Team ──────────────────────────────────────
 KB_SUPPORT = _mk(
     [("🚩 Flag my query for the onboarding team", "sup:flag")],
     [("👤 Connect me to a live agent", "sup:agent")],
     [("🌐 Visit the Help Centre", "sup:help")],
-    [("← Back to menu", "nav:back")],
+    [("📝 My support tickets", "nav:tickets")],
+    [("◀️ Back to menu", "nav:back")],
+)
+
+
+# ── Getting Started ──────────────────────────────────────────────────
+KB_GETTING_STARTED = _mk(
+    [("📝 How to sign up", "gs:signup")],
+    [("📄 Documents I'll need", "gs:docs")],
+    [("⏱️ How long does it take?", "gs:time")],
+    [("◀️ Back to menu", "nav:back")],
 )
 
 
@@ -141,16 +135,23 @@ KB_STATUS_POST = _mk(
 )
 
 KB_OTP_RESEND_OPTIONS = _mk(
-    [("Resend code", "otp:resend"), ("Change my email", "otp:change_email")],
-    [("🎧 Contact support", "nav:support")],
+    [("🔄 Resend code", "otp:resend"), ("📧 Change my email", "otp:change_email")],
+    [("🎧 Contact support", "nav:support"), ("◀️ Back to menu", "nav:back")],
 )
 
 KB_OTP_EXPIRED = _mk(
-    [("Yes, send new code", "otp:resend"), ("No, cancel", "nav:back")],
+    [("✅ Yes, send new code", "otp:resend"), ("❌ No, cancel", "nav:back")],
 )
 
 KB_OTP_LOCKED = _mk(
     [("🎧 Contact support now", "nav:support")],
+    [("◀️ Back to menu", "nav:back")],
+)
+
+# Cancel out of OTP flow at any point
+KB_OTP_CANCEL = _mk(
+    [("📧 Change my email", "otp:change_email")],
+    [("◀️ Cancel and go back", "nav:back")],
 )
 
 
@@ -158,90 +159,98 @@ KB_OTP_LOCKED = _mk(
 KB_URGENCY = _mk(
     [("👤 Connect me to a live agent now", "sup:agent")],
     [("🚩 Priority flag for onboarding team", "sup:flag")],
-    [("← Back to menu", "nav:back")],
+    [("◀️ Back to menu", "nav:back")],
 )
+
+
+# ── Feedback ──────────────────────────────────────────────────────────
+def kb_feedback(context_id: str = "general") -> InlineKeyboardMarkup:
+    """Thumbs up/down feedback after answering a question."""
+    return _mk(
+        [("👍 Helpful", f"fb:yes:{context_id}"), ("👎 Not helpful", f"fb:no:{context_id}")],
+    )
 
 
 # ── Utility keyboards ─────────────────────────────────────────────────
 def kb_ask_back(section: str) -> InlineKeyboardMarkup:
     """'Ask another question' sends user back to the named submenu callback."""
     return _mk(
-        [("Ask another question", f"nav:{section}"), ("← Back to menu", "nav:back")],
+        [("🔄 Ask another question", f"nav:{section}"), ("◀️ Back to menu", "nav:back")],
     )
 
 
 def kb_back() -> InlineKeyboardMarkup:
-    return _mk([("← Back to menu", "nav:back")])
+    return _mk([("◀️ Back to menu", "nav:back")])
 
 
 def kb_support_back() -> InlineKeyboardMarkup:
     return _mk(
-        [("🎧 Contact support now", "nav:support"), ("← Back to menu", "nav:back")],
+        [("🎧 Contact support", "nav:support"), ("◀️ Back to menu", "nav:back")],
     )
 
 
 # ── Status check confirmation (soft trigger) ─────────────────────────
 KB_STATUS_CONFIRM = _mk(
-    [("Yes, check my status", "status:check"), ("No, something else", "nav:back")],
+    [("✅ Yes, check my status", "status:check"), ("❌ No, something else", "nav:back")],
 )
 
 
 def kb_status_support_back() -> InlineKeyboardMarkup:
     return _mk(
-        [("🔍 Check my KYB status", "status:check"), ("🎧 Talk to support", "nav:support")],
-        [("← Back to menu", "nav:back")],
+        [("📊 Check my onboarding status", "status:check"), ("🎧 Talk to support", "nav:support")],
+        [("◀️ Back to menu", "nav:back")],
     )
 
 
 # ── Group Quick Menu keyboards ────────────────────────────────────────
 
 KB_GROUP_MAIN = _mk(
-    [("🌍 What is Endl?", "grp:about"), ("💱 Currencies & fees", "grp:currencies")],
-    [("💸 Payments & transfers", "grp:payments"), ("📋 Onboarding info", "grp:onboarding")],
-    [("🔒 Security", "grp:security"), ("🔐 Check my account status", "grp:status")],
+    [("ℹ️ What is Endl?", "grp:about"), ("💱 Currencies & fees", "grp:currencies")],
+    [("📤 Payments & transfers", "grp:payments"), ("📋 Onboarding info", "grp:onboarding")],
+    [("🛡️ Security", "grp:security"), ("🔐 Check my account status", "grp:status")],
 )
 
 KB_GROUP_ABOUT = _mk(
-    [("Who is it for?", "grp:about_who")],
-    [("Is Endl regulated?", "grp:about_regulated")],
-    [("How is Endl different from Wise?", "grp:about_wise")],
-    [("← Back to menu", "grp:back")],
+    [("👥 Who is it for?", "grp:about_who")],
+    [("📜 Is Endl regulated?", "grp:about_regulated")],
+    [("⚡ Endl vs Wise?", "grp:about_wise")],
+    [("◀️ Back to menu", "grp:back")],
 )
 
 KB_GROUP_CURRENCIES = _mk(
-    [("What currencies are supported?", "grp:curr_supported")],
-    [("What are the fees?", "grp:curr_fees")],
-    [("What stablecoins does Endl support?", "grp:curr_stablecoins")],
-    [("← Back to menu", "grp:back")],
+    [("💵 What currencies?", "grp:curr_supported")],
+    [("💰 What are the fees?", "grp:curr_fees")],
+    [("🪙 What stablecoins?", "grp:curr_stablecoins")],
+    [("◀️ Back to menu", "grp:back")],
 )
 
 KB_GROUP_PAYMENTS = _mk(
-    [("How do I receive payments?", "grp:pay_receive")],
-    [("What payment rails are supported?", "grp:pay_rails")],
-    [("Can I send SWIFT transfers?", "grp:pay_swift")],
-    [("How long do withdrawals take?", "grp:pay_time")],
-    [("← Back to menu", "grp:back")],
+    [("📥 How do I receive payments?", "grp:pay_receive")],
+    [("🛤️ What payment rails?", "grp:pay_rails")],
+    [("📤 Can I send SWIFT?", "grp:pay_swift")],
+    [("⏳ How long do withdrawals take?", "grp:pay_time")],
+    [("◀️ Back to menu", "grp:back")],
 )
 
 KB_GROUP_ONBOARDING = _mk(
-    [("How long does onboarding take?", "grp:onb_time")],
-    [("What documents do I need?", "grp:onb_docs")],
-    [("Why is my onboarding delayed?", "grp:onb_delayed")],
-    [("← Back to menu", "grp:back")],
+    [("⏱️ How long does onboarding take?", "grp:onb_time")],
+    [("📄 What documents do I need?", "grp:onb_docs")],
+    [("🔍 Why is my onboarding delayed?", "grp:onb_delayed")],
+    [("◀️ Back to menu", "grp:back")],
 )
 
 KB_GROUP_SECURITY = _mk(
-    [("Is my money safe?", "grp:sec_safe")],
-    [("How is my data protected?", "grp:sec_data")],
-    [("How are transactions monitored?", "grp:sec_monitoring")],
-    [("← Back to menu", "grp:back")],
+    [("🔐 Is my money safe?", "grp:sec_safe")],
+    [("🛡️ How is my data protected?", "grp:sec_data")],
+    [("📡 How are transactions monitored?", "grp:sec_monitoring")],
+    [("◀️ Back to menu", "grp:back")],
 )
 
-KB_GROUP_BACK = _mk([("← Back to menu", "grp:back")])
+KB_GROUP_BACK = _mk([("◀️ Back to menu", "grp:back")])
 
 KB_GROUP_BACK_WITH_STATUS = _mk(
     [("🔐 Check my account status", "grp:status")],
-    [("← Back to menu", "grp:back")],
+    [("◀️ Back to menu", "grp:back")],
 )
 
 
@@ -256,13 +265,15 @@ def get_kb_by_name(name: str, account_type: str = "individual") -> InlineKeyboar
         "status_flow":    KB_STATUS_CONFIRM,
         "about":          KB_ABOUT,
         "currencies":     KB_CURRENCIES,
-        "payments_ind":   KB_PAY_IND,
-        "payments_biz":   KB_PAY_BIZ,
+        "payments":       KB_PAYMENTS,
+        "payments_ind":   KB_PAYMENTS,
+        "payments_biz":   KB_PAYMENTS,
         "onboarding":     KB_ONBOARDING,
         "card":           KB_CARD,
-        "security":       KB_SECURITY_BIZ if account_type == "business" else KB_SECURITY_IND,
+        "security":       KB_SECURITY,
         "support":        KB_SUPPORT,
         "urgency":        KB_URGENCY,
+        "getting_started": KB_GETTING_STARTED,
         "main_menu":      kb_main(account_type),
     }
     return mapping.get(name, kb_main(account_type))

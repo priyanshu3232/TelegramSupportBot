@@ -28,6 +28,7 @@ from telegram.ext import ContextTypes
 from handlers.message_router import handle_message
 from handlers.greeting import is_greeting
 from utils.keyboards import KB_GROUP_MAIN
+from telegram.constants import ChatAction
 
 logger = logging.getLogger(__name__)
 
@@ -237,11 +238,16 @@ async def handle_group_message(
     # --- Empty tag or greeting only → Group Quick Menu ---
     if not cleaned or is_greeting(cleaned) or cleaned.lower().strip() in ("help", "menu"):
         await message.reply_text(
-            "👋 Hey! Here's what I can help with:",
+            "👋 Hey! I'm the Endl Support Bot. Here's what I can help with:\n\n"
+            "Ask me about payments, currencies, onboarding, security, and more. "
+            "For account-specific queries, DM me to keep your details private \U0001f512",
             reply_markup=KB_GROUP_MAIN,
             reply_to_message_id=message.message_id,
         )
         return
+
+    # Send typing indicator
+    await message.chat.send_action(ChatAction.TYPING)
 
     # --- Pass cleaned text and threading info via context (NOT mutation) ---
     # Directly mutating message.text or message.reply_text fails in
@@ -267,6 +273,32 @@ async def handle_group_message(
         )
     finally:
         context.user_data.pop("_group_msg", None)
+
+
+async def handle_new_chat_members(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Send an intro message when the bot is added to a new group."""
+    if update.message is None or update.message.new_chat_members is None:
+        return
+
+    bot_username = await _get_bot_username(context)
+    if bot_username is None:
+        return
+
+    for member in update.message.new_chat_members:
+        if member.username and member.username.lower() == bot_username.lower():
+            await update.message.reply_text(
+                "👋 Hey everyone! I'm the <b>Endl Support Bot</b>.\n\n"
+                "I can answer questions about Endl — payments, currencies, onboarding, "
+                "corporate cards, security, and more.\n\n"
+                "Just tag me with <b>@" + bot_username + "</b> followed by your question, "
+                "or tap a topic below to get started.\n\n"
+                "For account-specific queries, DM me to keep your details private \U0001f512",
+                reply_markup=KB_GROUP_MAIN,
+                parse_mode="HTML",
+            )
+            return
 
 
 async def handle_edited_group_message(
