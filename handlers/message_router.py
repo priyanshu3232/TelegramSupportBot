@@ -17,12 +17,17 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
-from config import SUPPORT_LINK, SMTP_USER, SMTP_PASSWORD
+from config import (
+    SUPPORT_LINK, SMTP_USER, SMTP_PASSWORD, SUPPORT_GROUP_ID,
+    SUPPORTED_IMAGE_TYPES, SUPPORTED_DOC_TYPES,
+)
+from services.file_processor import process_uploaded_file
 from database.models import (
     get_or_create_session, update_session, save_message,
     save_verified_user, get_verified_email, get_conversation_history,
 )
 from handlers.greeting import is_greeting
+from handlers.escalation import handle_escalation
 from utils.keyboards import (
     kb_main, KB_SUPPORT, KB_OTP_RESEND_OPTIONS,
     KB_OTP_EXPIRED, KB_OTP_LOCKED, KB_URGENCY, kb_back, _mk,
@@ -53,6 +58,23 @@ _STATUS_KEYWORDS = [
 ]
 
 _MENU_KEYWORDS = ["menu", "back", "start over", "restart", "main menu", "home"]
+
+_ERROR_UPLOAD_KEYWORDS = [
+    "error", "bug", "broken", "not working", "can't login", "can't log in",
+    "failed", "failure", "stuck", "crash", "issue", "problem", "glitch",
+    "wrong", "doesn't work", "won't load", "rejected", "declined",
+    "can't upload", "upload failed", "document rejected", "verification failed",
+    "page not loading", "blank screen", "keeps crashing", "showing error",
+]
+
+
+def _should_ask_for_screenshot(text: str, intent: str) -> bool:
+    """Return True when the user describes an error where a screenshot would help."""
+    lower = text.lower()
+    if intent in ("frustration", "unknown", "rejection_error"):
+        return any(kw in lower for kw in _ERROR_UPLOAD_KEYWORDS)
+    # Stricter match for known intents — only the most unambiguous error keywords
+    return any(kw in lower for kw in _ERROR_UPLOAD_KEYWORDS[:5])
 
 
 def _smtp_ok() -> bool:
@@ -111,7 +133,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     try:
-        await _route(update, user_id, chat_id, chat_type, message_text, session_key, reply_kw)
+        await _route(update, context, user_id, chat_id, chat_type, message_text, session_key, reply_kw)
     except Exception as exc:
         logger.error("Error for user %s: %s\n%s", user_id, exc, traceback.format_exc())
         try:
@@ -129,28 +151,117 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def handle_non_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle images, stickers, files, etc. (Step 13)."""
+    """Handle photos, documents, stickers, and other non-text messages."""
     if not update.message:
         return
     user = update.effective_user
     chat = update.effective_chat
     if not user or not chat:
         return
+
     session = await get_or_create_session(chat.id, user.id)
     account_type = session.get("user_type") or "individual"
-    await update.message.reply_text(
-        "I can't read images or files just yet — but you can describe what you see "
-        "and I'll do my best to help, or send it directly to our support team.",
-        reply_markup=_mk(
-            [("Talk to support", "nav:support"), ("◀ Back", "nav:back")],
-        ),
+    session_key = f"{chat.id}_{user.id}"
+    message = update.message
+
+    # ── Stickers — friendly redirect ────────────────────────────────
+    if message.sticker:
+        await message.reply_text(
+            "Nice sticker! Unfortunately I can't extract information from stickers. "
+            "If you're having an issue, try sending a screenshot or describing it in text.",
+            reply_markup=_mk([("Main menu", "nav:back")]),
+        )
+        return
+
+    # ── Photos (compressed images) ──────────────────────────────────
+    if message.photo:
+        photo = message.photo[-1]  # largest available size
+        file_id = photo.file_id
+        mime_type = "image/jpeg"
+        file_name = f"photo_{photo.file_unique_id}.jpg"
+        caption = message.caption or ""
+
+    # ── Documents (includes uncompressed images + PDFs) ─────────────
+    elif message.document:
+        doc = message.document
+        file_id = doc.file_id
+        mime_type = doc.mime_type or "application/octet-stream"
+        file_name = doc.file_name or f"document_{doc.file_unique_id}"
+        caption = message.caption or ""
+
+        if mime_type not in SUPPORTED_IMAGE_TYPES + SUPPORTED_DOC_TYPES:
+            await message.reply_text(
+                f"I can process images (JPG, PNG, WebP) and PDFs. "
+                f"The file you sent ({mime_type}) isn't supported yet.\n\n"
+                "You can describe your issue in text and I'll help, or send a screenshot instead.",
+                reply_markup=_mk(
+                    [("Talk to support", "nav:support"), ("◀ Back", "nav:back")]
+                ),
+            )
+            return
+
+    # ── Everything else ──────────────────────────────────────────────
+    else:
+        await message.reply_text(
+            "I can't process this type of message yet. "
+            "Try sending a screenshot, photo, or PDF, or describe your issue in text.",
+            reply_markup=_mk([("Main menu", "nav:back")]),
+        )
+        return
+
+    # ── Rate limit — count image as 2 messages ───────────────────────
+    if is_rate_limited(user.id) or is_rate_limited(user.id):
+        await message.reply_text(
+            "You're sending messages a bit fast — please wait about 30 seconds and try again."
+        )
+        return
+
+    await message.chat.send_action(ChatAction.TYPING)
+
+    # Build user context from caption + recent history
+    history = await get_conversation_history(session_key, limit=6)
+    user_context = caption if caption else "User sent an image without a description."
+
+    # Process through the pipeline
+    result = await process_uploaded_file(
+        bot=context.bot,
+        file_id=file_id,
+        file_name=file_name,
+        mime_type=mime_type,
+        user_context=user_context,
+        account_type=account_type,
+        conversation_history=history,
     )
+
+    if result["success"]:
+        # Build conversation log entry
+        user_msg = f"[Sent image: {file_name}]"
+        if caption:
+            user_msg += f" Caption: {caption}"
+        ocr_snippet = (result.get("ocr_text") or "")[:200]
+        if ocr_snippet:
+            user_msg += f" [OCR extracted: {ocr_snippet}]"
+
+        await save_message(session_key, "user", user_msg)
+
+        kb = get_kb_by_name(result.get("buttons", "support"), account_type)
+        await message.reply_text(result["response_text"], reply_markup=kb)
+        await save_message(session_key, "assistant", result["response_text"])
+    else:
+        await message.reply_text(
+            "I had trouble processing that image. Could you try again, or describe "
+            "what you're seeing in text? I'll do my best to help.",
+            reply_markup=_mk(
+                [("Talk to support", "nav:support"), ("◀ Back", "nav:back")]
+            ),
+        )
 
 
 # ── Core router ───────────────────────────────────────────────────────
 
 async def _route(
     update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     chat_id: int,
     chat_type: str,
@@ -318,11 +429,48 @@ async def _route(
 
     # ── SUPPORT FLAG: AWAITING TEXT ─────────────────────────────────
     if state == "awaiting_flag_query":
+        # Create escalation ticket
+        ticket_id, _ = await handle_escalation(
+            session_key=session_key,
+            user_id=update.effective_user.id,
+            chat_id=update.effective_chat.id,
+            user_type=account_type,
+            detected_intent="onboarding_flag",
+        )
+
+        # Forward ticket details to support group
+        username = update.effective_user.username
+        full_name = update.effective_user.full_name or "Unknown"
+        user_ref = f"@{username}" if username else f"User ID: {update.effective_user.id}"
+        verified_email = await get_verified_email(update.effective_user.id)
+
+        support_msg = (
+            f"🎫 <b>New Support Ticket</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>Ticket ID:</b> {ticket_id}\n"
+            f"<b>Customer:</b> {full_name} ({user_ref})\n"
+            f"<b>Account Type:</b> {account_type or 'Unknown'}\n"
+            f"<b>Email:</b> {verified_email or 'Not verified'}\n"
+            f"<b>Query:</b>\n{text}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<i>Reply to this ticket within 1 business day.</i>"
+        )
+
+        try:
+            await context.bot.send_message(
+                chat_id=SUPPORT_GROUP_ID,
+                text=support_msg,
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error("Failed to forward ticket %s to support group: %s", ticket_id, e)
+
         await update_session(session_key, conversation_state="active")
         await update.message.reply_text(
-            "Got it \u2705 Your query has been flagged and our onboarding team will review it and "
-            "follow up with you within 1 business day.\n\nIs there anything else I can help with?",
+            f"Got it \u2705 Your query has been flagged (Ticket: <code>{ticket_id}</code>) and our "
+            f"onboarding team will follow up within 1 business day.\n\nIs there anything else I can help with?",
             reply_markup=kb_main(account_type),
+            parse_mode="HTML",
             **reply_kw,
         )
         return
@@ -433,6 +581,15 @@ async def _route(
         await save_message(session_key, "user", text)
         await update.message.reply_text(reply, reply_markup=kb, **reply_kw)
         await save_message(session_key, "assistant", reply)
+
+        # Proactively ask for a screenshot when the user describes an error
+        if _should_ask_for_screenshot(text, intent) and intent not in ("greeting", "menu", "account_switch"):
+            await update.message.reply_text(
+                "If you can share a screenshot of what you're seeing, I can analyse it "
+                "and give you more specific help.",
+                reply_markup=_mk([("Skip, describe instead", "nav:back")]),
+                **reply_kw,
+            )
     else:
         # No reply (shouldn't happen but fallback gracefully)
         await update.message.reply_text(

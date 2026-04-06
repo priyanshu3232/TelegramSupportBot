@@ -372,6 +372,13 @@ KB_GROUP_BACK_WITH_STATUS = _mk(
 )
 
 
+# ── Post image-analysis keyboard ─────────────────────────────────────
+KB_IMAGE_ANALYZED = _mk(
+    [("Flag for support team", "sup:flag"), ("Upload another image", "nav:back")],
+    [("🏠 Main Menu", "nav:back")],
+)
+
+
 # ── Name → keyboard resolver (used by free-text handler) ─────────────
 
 def get_kb_by_name(name: str, account_type: str = "individual") -> InlineKeyboardMarkup:
@@ -392,6 +399,7 @@ def get_kb_by_name(name: str, account_type: str = "individual") -> InlineKeyboar
         "support":        KB_SUPPORT,
         "urgency":        KB_URGENCY,
         "getting_started": KB_GETTING_STARTED,
+        "image_analyzed": KB_IMAGE_ANALYZED,
         "main_menu":      kb_main(account_type),
     }
     return mapping.get(name, kb_main(account_type))
